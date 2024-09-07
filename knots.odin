@@ -17,15 +17,16 @@ gap = 0.2
 symmetry = "None"
 elbow_segments = 4
 ringify = 1
-border_x = 1
-border_y = 0
+border_x = "-border-x"
+border_y = ""
 breaks_percent = 0.5
 
-args = "%s %s %s %s %s %s %s %s %s %s %s" % (gridx, gridy, grid_spacing, thickness, gap, symmetry, elbow_segments, ringify, border_x, border_y, breaks_percent)
+args = "%s %s -grid-spacing:%s -thickness:%s -gap:%s -symmetry:%s -elbow-segments:%s -ringify:%s %s %s -breaks-percent:%s" % (gridx, gridy, grid_spacing, thickness, gap, symmetry, elbow_segments, ringify, border_x, border_y, breaks_percent)
 ret = subprocess.run([bpy.path.abspath("//") + "src\\celtic_knots\\knots.exe"] + args.split(), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 # Define vertices, edges, faces for a mesh
 lines = ret.stdout.decode("utf-8")
+print(lines)
 vertices = []
 edges = []
 faces = []
@@ -78,7 +79,7 @@ new_collection.objects.link(new_object)
  
  */
 
-
+import "core:flags"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
@@ -261,7 +262,6 @@ random_break_spots :: proc(values: ^Values) {
     y := values.break_spots[i].y
     raw_data(values.breaks[y])[x] = u8(val)
 
-    // TODO symmetry
     if values.symmetry == "180 rotation" {
       raw_data(values.breaks[y*2 - y])[values.grid.x*2 - x] = u8(val)
     } else if values.symmetry == "4-fold mirror" {
@@ -893,69 +893,64 @@ get_knot :: proc(values: ^Values, knot: ^[dynamic]KnotPath) {
 }
 
 main :: proc() {
-  exe_name := os.args[0]
-
-  if len(os.args) == 0 {
-    fmt.printf("usage: %s [options] grid_x grid_y [grid_spacing] [thickness] [gap] [symmetry] [elbow_segments] [ringify] [border_x] [border_y] [breaks_percent]\n", exe_name)
-    fmt.printf("  options:\n")
-    fmt.printf("    -h\tthis help\n")
-    fmt.printf("    grid_x\twidth of grid\n")
-    fmt.printf(" TODO...\n")
-    // TODO the rest here
-    return
+  Options :: struct {
+    grid_x: i32 `args:"pos=0,required" usage:"grid width."`,
+    grid_y: i32 `args:"pos=1,required" usage:"grid height."`,
+    grid_spacing: i32 `usage:"how big each grid cell is."`,
+    thickness: f32 `usage:"thickness of knot [0..1]."`,
+    gap: f32 `usage:"gap when knot goes under [0..1]."`,
+    symmetry: string `usage:"None | 180 rotation | 4-fold mirror | 8-fold mirror."`,
+    elbow_segments: i32 `usage:"segments used for rounded elbow corners."`,
+    border_x: bool `usage:"loop around horizontally."`,
+    border_y: bool `usage:"loop around vertically."`,
+    breaks_percent: f32 `usage:"percentage of random breaks added."`,
+    ringify: bool `usage:"turn grid into a ring."`,
   }
-  
-  args := os.args[1:]
+  opt: Options
+  style : flags.Parsing_Style = .Odin
+
+  flags.parse_or_exit(&opt, os.args, style)
 
   values : Values
-  values.grid = [?]i32{2,3}
+  values.grid = [?]i32{opt.grid_x,opt.grid_y}
   values.grid_spacing = 80
   values.rounding = 0.80  // unused
   values.thickness = 0.50
   values.gap = .07
-  values.symmetry = ""
+  values.symmetry = "None"
   values.elbow_segments = 4
   values.show_breaks = false
   values.breaks_percent = 0.5
-
-  idx := 0
-  tmp : f32
-  for a in args {
-    if a[0] == '-' || a[0] == '/' {
-      continue // TODO
-    }
-    
-    tmp, _ = strconv.parse_f32(a)
-    switch idx {
-    case 0:
-      values.grid.x = i32(tmp)
-    case 1:
-      values.grid.y = i32(tmp)
-    case 2:
-      values.grid_spacing = i32(tmp)
-    case 3:
-      values.thickness = f32(tmp)
-    case 4:
-      values.gap = f32(tmp)
-    case 5:
-      values.symmetry = a
-    case 6:
-      values.elbow_segments = i32(tmp)
-    case 7:
-      values.ringify = bool(tmp != 0.0)
-    case 8:
-      values.border_x = bool(tmp != 0.0)
-    case 9:
-      values.border_y = bool(tmp != 0.0)
-    case 10:
-      values.breaks_percent = f32(tmp)
-    }
-    idx += 1
+  if opt.grid_spacing != 0 {
+    values.grid_spacing = opt.grid_spacing
   }
+  if opt.thickness != 0 {
+    values.thickness = opt.thickness
+  }
+  if opt.gap != 0 {
+    values.gap = opt.gap
+  }
+  if opt.symmetry != "" {
+    values.symmetry = opt.symmetry
+  }
+  if opt.elbow_segments != 0 {
+    values.elbow_segments = opt.elbow_segments
+  }
+  if opt.border_x != false {
+    values.border_x = opt.border_x
+  }
+  if opt.border_y != false {
+    values.border_y = opt.border_y
+  }
+  if opt.breaks_percent != 0 {
+    values.breaks_percent = opt.breaks_percent
+  }
+  if opt.ringify != false {
+    values.ringify = opt.ringify
+  }
+  
   alloc_breaks(&values); defer clean_breaks(&values)
   random_break_spots(&values)
-
-  //fmt.println(values.grid.x, values.grid.y, values.grid_spacing, values.thickness, values.gap, values.symmetry, values.elbow_segments, values.ringify, values.border_x, values.border_y, values.breaks_percent)
 
   knot : [dynamic]KnotPath; defer delete(knot)
   get_knot(&values, &knot)
